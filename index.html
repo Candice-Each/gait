@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>方案B</title>
+  <link rel="stylesheet" href="./css/tokens.css" />
+  <link rel="stylesheet" href="./css/app.css" />
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+</head>
+
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-text">
+        <h1>方案B</h1>
+        <p>方案 B · PC / iPad + 手機 IMU </p>
+      </div>
+    </div>
+    <div class="brand-badges" style="align-items:center;">
+      <label class="field">
+        <span>年齡常模</span>
+        <select id="ageGroupSelect" style="width:auto;">
+          <option value="60_69">60–69 歲長者常模</option>
+          <option value="70_79" selected>70–79 歲長者常模</option>
+          <option value="80_plus">80 歲以上高齡常模</option>
+          <option value="adult">青年對照組 (18–59 歲)</option>
+        </select>
+      </label>
+      <label class="check" style="font-size:12px; font-weight:700; color:var(--primary-deep);">
+        <input type="checkbox" id="voiceEnableCheck" checked />
+        <span>語音引導</span>
+      </label>
+      <select id="voiceLangSelect" style="width:auto;">
+        <option value="zh-CN">普通話(Mandarin)</option>
+        <option value="zh-HK">粵語 (Cantonese)</option>
+      </select>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- ================= 3D 骨骼視圖 + 雙圖表 + LLM 評估 ================= -->
+    <section class="col">
+      <article class="card">
+        <header class="card-head">
+          <h2>3D 隱私脫敏步態視圖</h2>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <label class="field">
+              <span>鏡頭</span>
+              <select id="cameraFacingSelect" style="width:auto;">
+                <option value="user">前置鏡頭</option>
+                <option value="environment">後置鏡頭</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>骨骼形態</span>
+              <select id="avatarModeSelect" style="width:auto;">
+                <option value="stickman" selected>圓頭火柴人</option>
+                <option value="capsule">膠囊體模</option>
+                <option value="raw">33 解剖點</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>模型</span>
+              <select id="modelSelect" style="width:auto;">
+                <option value="lite">Lite</option>
+                <option value="full">Full</option>
+              </select>
+            </label>
+          </div>
+        </header>
+
+        <video id="webcam" autoplay playsinline muted class="hidden-video"></video>
+        <canvas id="canvas" width="630" height="380" class="stage"></canvas>
+
+        <div class="toolbar">
+          <label class="check">
+            <input type="checkbox" id="showRawVideo" />
+            <span>調試時疊加顯示原畫面</span>
+          </label>
+          <span style="font-weight:700; color:var(--primary);">站位：距電腦 / iPad 約 2 米側向站立 1 秒校準 → 自然走動 5 秒自動出報告</span>
+        </div>
+      </article>
+      <!-- LLM 評估板 -->
+      <article class="card">
+        <header class="card-head">
+          <h2>LLM 評估</h2>
+          <span class="card-sub" id="adviceBadge">等待全身入畫採樣…</span>
+        </header>
+
+        <div id="clinicalNormBox"
+          style="font-size:13px; line-height:1.75; color:var(--text-soft); background:var(--primary-soft); padding:10px 14px; border-radius:10px; border:1px solid var(--border); margin-bottom:10px;">
+          受試者全身入畫走動時，系統將即時計算同齡標準差偏離度（Z-Score）。
+        </div>
+
+        <div id="chineseAdviceBox"
+          style="font-size:13.5px; line-height:1.8; color:var(--text-soft); background:var(--bg-soft); padding:12px 14px; border-radius:10px; border:1px solid var(--border);">
+          大模型生成鑑別分析。
+        </div>
+
+        <div class="actions" style="justify-content:space-between;">
+          <span style="font-size:11.5px; color:var(--text-muted);">參考文獻：Hollman et al. (Gait &amp; Posture) · OARSI
+            Guidelines · 香港衛生署長者防跌框架</span>
+          <button id="btnManualLlm" class="btn btn-primary">立即觸發 / 重新播報 LLM 評估</button>
+        </div>
+      </article>
+
+      <div class="charts-row">
+        <div id="waveChart" class="chart-box"></div>
+        <div id="radarChart" class="chart-box"></div>
+      </div>
+
+    </section>
+
+    <!-- ================= 手機配對 ================= -->
+    <section class="col dashboard">
+      <article class="card">
+        <header class="card-head">
+          <h2>手機配對</h2>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <span class="card-sub" id="imuConnBadge">等待手機配對…</span>
+            <button id="btnNewRoom" class="btn btn-ghost" style="padding:4px 10px; font-size:11.5px;">重新整理房間號</button>
+          </div>
+        </header>
+        <div style="display:flex; align-items:center; gap:16px;">
+          <canvas id="wirelessQrCanvas" width="112" height="112"
+            style="border:1px solid var(--border); border-radius:10px; padding:5px; background:#fff; flex:none;"></canvas>
+          <div style="font-size:12.5px; line-height:1.75; color:var(--text-soft); flex:1;">
+            <div>內建公共 MQTT over WSS 中繼（HiveMQ / EMQX / Mosquitto 公眾沙箱）, <b>未做端到端加密</b>，請避免使用默認房間號，並勿在公共 Wi-Fi 下長時間採集。
+            </div>
+            <div style="margin-top:4px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <span>配對號: <b id="roomCodeText" style="color:var(--accent-strong); font-size:14px;">⋯</b></span>
+              <span>| 手機端位址: <a id="wirelessUrlLink" href="./imu.html" target="_blank"
+                  style="color:var(--primary); font-weight:700; word-break:break-all;">正在產生…</a></span>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- 1. 模型層 -->
+      <article class="card">
+        <header class="card-head">
+          <h2>1. 模型層指標（Model Layer）</h2>
+          <span class="card-sub">MediaPipe Pose Landmarker · WebGL</span>
+        </header>
+        <div class="metrics metrics-3">
+          <div class="metric">
+            <span class="metric-label">模型載入狀態 / 耗時</span>
+            <span class="metric-value" id="m_load">正在載入…</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">首幀推理延遲</span>
+            <span class="metric-value" id="m_firstFrame">-- ms</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">即時幀率 / 單幀耗時</span>
+            <span class="metric-value" id="m_fps">-- FPS</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">未入畫 / 遮擋丟幀率</span>
+            <span class="metric-value" id="m_dropRate">0.0% (0/0)</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">下肢關鍵點可見度 (Vis)</span>
+            <span class="metric-value" id="m_visAvg">--</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">膝關節角 MAE 誤差 (100 幀)</span>
+            <span class="metric-value" id="m_mae">待點擊採集</span>
+          </div>
+        </div>
+        <div class="actions">
+          <button id="btnCalcMae" class="btn btn-primary">點擊採集計算 MAE</button>
+          <label class="field">
+            <span>量角器真實角度 (°)</span>
+            <input type="number" id="trueAngleInput" value="60" />
+          </label>
+          <button id="btnResetDrop" class="btn btn-ghost">重置丟幀統計</button>
+        </div>
+      </article>
+
+      <!-- 2. 算法層 -->
+      <article class="card">
+        <header class="card-head">
+          <h2>2. 算法層指標（Algorithm Layer）</h2>
+          <span class="card-sub">側向站立自校準 · One-Euro 濾波 · 退化識別</span>
+        </header>
+        <div class="metrics metrics-3">
+          <div class="metric">
+            <span class="metric-label">右膝屈曲角（原始 / 濾波後）</span>
+            <span class="metric-value" id="a_kneeAngle">--° / --°</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">5 秒靜態抖動標準差 (&lt; 1.2°)</span>
+            <span class="metric-value" id="a_jitter">待測試</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">自動評估狀態 / 時長</span>
+            <span class="metric-value" id="a_tugState">等待全身入畫</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">計時誤差校驗 (≤ 0.5s)</span>
+            <span class="metric-value" id="a_tugErr">待對比</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">雙膝活動範圍 ROM (左 / 右)</span>
+            <span class="metric-value" id="a_rom">--° / --°</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">步伐不對稱率 SI / 軀幹搖擺</span>
+            <span class="metric-value" id="a_si">0.0% / 0.0°</span>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="btnJitter" class="btn btn-primary">① 測 5 秒靜態抖動</button>
+          <button id="btnResetTug" class="btn btn-ghost">② 校準並重新評估</button>
+          <label class="field">
+            <span>實際耗時</span>
+            <input type="number" id="manualTugInput" value="5.00" step="0.1" />
+          </label>
+          <button id="btnCalcTugErr" class="btn btn-ghost">點擊反饋並校準誤差</button>
+        </div>
+
+        <div class="actions">
+          <button id="btnLogNormal" class="btn btn-accent">【測試】記錄至正常組</button>
+          <button id="btnLogDegenerated" class="btn btn-ghost">【測試】記錄至異常組</button>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>測試分組</th>
+                <th>監測時長（秒）</th>
+                <th>左膝 ROM(°)</th>
+                <th>右膝 ROM(°)</th>
+                <th>不對稱率 SI / 軀幹搖擺</th>
+                <th>循證風險評級</th>
+              </tr>
+            </thead>
+            <tbody id="algComparisonBody"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <!-- 3. 系統層與多模態錄製 -->
+      <article class="card">
+        <header class="card-head">
+          <h2>3. 系統層與多模態數據錄製器（System &amp; Recorder）</h2>
+          <span class="card-sub">手機 IMU 同步 + 30FPS 脫敏影片 / 姿態錄製</span>
+        </header>
+        <div class="metrics metrics-2">
+          <div class="metric">
+            <span class="metric-label">手機 IMU 推送間隔（目標 ~250ms）</span>
+            <span class="metric-value" id="s_imuInterval">等待手機連線…</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">間隔抖動 SD / 即時步頻與觸地 SI</span>
+            <span class="metric-value" id="s_imuJitter">--</span>
+          </div>
+        </div>
+        <div class="actions">
+          <button id="btnMockImu" class="btn btn-ghost">開啟本機 250ms 模擬 IMU 推送</button>
+          <button id="btnExportReport" class="btn btn-ghost">匯出 JSON 評估摘要報告</button>
+        </div>
+
+        <div class="rec-panel">
+          <div class="rec-head">
+            <label class="field">
+              <span>錄製模式</span>
+              <select id="recModeSelect">
+                <option value="both">脫敏姿態 + 手機 IMU</option>
+                <option value="imu_only">脫敏姿態</option>
+                <option value="pose_only">手機 IMU</option>
+              </select>
+            </label>
+            <span class="rec-status" id="s_recStatus">就緒 · 0.0 秒（姿態: 0 幀 | IMU: 0 包）</span>
+          </div>
+          <div class="actions">
+            <button id="btnToggleRec" class="btn btn-primary">● 開始錄製數據</button>
+            <button id="btnExportCsv" class="btn btn-accent" disabled>下載 CSV 時間序列數據集</button>
+            <button id="btnExportSyncJson" class="btn btn-ghost" disabled>下載完整同步 JSON</button>
+          </div>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+
+</html>

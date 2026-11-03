@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>手機imu</title>
+  <style>
+    :root {
+      --bg: #F0F7FF;
+      --surface: #FFFFFF;
+      --primary: #0284C7;
+      --primary-deep: #0C4A6E;
+      --accent: #F97316;
+      --accent-strong: #EA580C;
+      --ok: #10B981;
+      --danger: #EF4444;
+      --font: "PingFang HK", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font);
+      background: var(--bg);
+      color: #0F172A;
+      display: flex;
+      flex-direction: column;
+      padding: 16px;
+    }
+    .status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface);
+      padding: 12px 16px;
+      border-radius: 14px;
+      border: 1px solid #BAE6FD;
+      margin-bottom: 12px;
+      font-size: 14px;
+      font-weight: 700;
+      gap: 8px;
+    }
+    .dot {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #94A3B8;
+      margin-right: 8px;
+      flex: none;
+    }
+    .dot.ok { background: var(--ok); box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.2); }
+    .dot.bad { background: var(--danger); }
+
+    .https-jump-banner,
+    .privacy-banner {
+      display: none;
+      border-radius: 14px;
+      margin-bottom: 12px;
+      font-size: 13.5px;
+      line-height: 1.5;
+      text-align: center;
+      padding: 12px 14px;
+    }
+    .https-jump-banner {
+      background: #FEF2F2;
+      border: 2px solid var(--danger);
+      color: #991B1B;
+    }
+    .https-jump-banner a {
+      display: block;
+      margin-top: 8px;
+      background: var(--danger);
+      color: #FFFFFF;
+      text-decoration: none;
+      font-weight: 800;
+      padding: 10px;
+      border-radius: 10px;
+      font-size: 15px;
+    }
+    .privacy-banner {
+      display: block;
+      background: #FFFBEB;
+      border: 1px solid #F59E0B;
+      color: #78350F;
+      text-align: left;
+      font-weight: 600;
+    }
+
+    .btn-elderly-giant {
+      flex: 1;
+      min-height: 320px;
+      width: 100%;
+      border-radius: 24px;
+      border: 3px solid var(--accent);
+      background: linear-gradient(180deg, #FFFFFF 0%, #FFF7ED 100%);
+      color: var(--accent-strong);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      cursor: pointer;
+      box-shadow: 0 12px 30px rgba(249, 115, 22, 0.15);
+      transition: transform 0.15s, background 0.2s;
+    }
+    .btn-elderly-giant:active { transform: scale(0.98); }
+    .btn-elderly-giant.running {
+      border-color: var(--ok);
+      background: linear-gradient(180deg, #ECFDF5 0%, #D1FAE5 100%);
+      color: #065F46;
+      box-shadow: 0 12px 30px rgba(16, 185, 129, 0.18);
+    }
+    .giant-icon { font-size: 56px; margin-bottom: 12px; }
+    .giant-title { font-size: 26px; font-weight: 900; line-height: 1.3; margin-bottom: 10px; }
+    .giant-sub { font-size: 15.5px; font-weight: 600; color: #475569; line-height: 1.5; max-width: 320px; }
+    .giant-metrics {
+      margin-top: 18px;
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--primary-deep);
+      background: rgba(255, 255, 255, 0.92);
+      padding: 10px 18px;
+      border-radius: 999px;
+      border: 1px solid #BAE6FD;
+    }
+
+    details {
+      margin-top: 14px;
+      background: var(--surface);
+      border: 1px solid #DCE8F5;
+      border-radius: 14px;
+      padding: 10px 14px;
+      font-size: 13px;
+    }
+    summary { font-weight: 700; color: var(--primary-deep); cursor: pointer; }
+    .debug-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .btn-small {
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #BAE6FD;
+      background: #EFF7FD;
+      color: var(--primary-deep);
+      font-weight: 700;
+      font-size: 13px;
+    }
+    #sensorDebug {
+      margin-top: 8px;
+      padding: 8px 10px;
+      background: #FEF3C7;
+      border: 1px solid #F59E0B;
+      border-radius: 8px;
+      font-size: 12px;
+      color: #78350F;
+      font-weight: 700;
+      line-height: 1.6;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <div class="status-bar">
+    <div style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+      <span id="connDot" class="dot"></span><span id="connText">正在連線電腦大屏…</span>
+    </div>
+    <span style="color:var(--primary); font-size:12.5px; flex:none;" id="wakeStatus">本地直連</span>
+  </div>
+
+  <div class="privacy-banner">
+    ⚠ 本頁會將 IMU 數據經<b>公共 MQTT 中繼</b>（HiveMQ / EMQX / Mosquitto 公眾沙箱）。請避免使用默認房間號，並勿在公共 Wi-Fi 下長時間採集。
+  </div>
+
+  <div id="httpsBanner" class="https-jump-banner">
+    <b>⚠️ 當前為 HTTP 8080 模式，iOS 會禁用硬件傳感器</b>
+    <a id="httpsJumpLink" href="#">👉 點此切換至 HTTPS 8443</a>
+  </div>
+
+  <button id="btnStart" class="btn-elderly-giant">
+    <span class="giant-icon" id="giantIcon">👆</span>
+    <span class="giant-title" id="giantTitle">輕觸螢幕 開始檢測</span>
+    <span class="giant-sub" id="giantSub">點擊一次後，請將手機直接放入口袋或握在胸前，側面面向電腦自然走動</span>
+    <div class="giant-metrics" id="giantMetrics">步頻: 0 步/分 · 震顫: 0.00</div>
+  </button>
+
+  <details open>
+    <summary>高級選項</summary>
+    <div id="sensorDebug">📊 等待點擊上方按鈕啟動…</div>
+    <div class="debug-btns">
+      <button id="btnTapStep" class="btn-small">手動點擊模擬邁步</button>
+      <button id="btnLocalRec" class="btn-small">● 手機本地獨立錄製</button>
+      <button id="btnLocalExport" class="btn-small" style="grid-column: span 2;" disabled>下載手機端 IMU CSV（原生採樣率）</button>
+    </div>
+    <div id="statusLog" style="margin-top:8px; color:#475569; line-height:1.6;">等待啟動…</div>
+  </details>
+
+  <script>
+    const connDotEl = document.getElementById('connDot');
+    const connTextEl = document.getElementById('connText');
+    const wakeStatusEl = document.getElementById('wakeStatus');
+    const btnStart = document.getElementById('btnStart');
+    const giantIcon = document.getElementById('giantIcon');
+    const giantTitle = document.getElementById('giantTitle');
+    const giantSub = document.getElementById('giantSub');
+    const giantMetrics = document.getElementById('giantMetrics');
+    const logEl = document.getElementById('statusLog');
+    const debugEl = document.getElementById('sensorDebug');
+    const btnLocalRec = document.getElementById('btnLocalRec');
+    const btnLocalExport = document.getElementById('btnLocalExport');
+    const btnTapStep = document.getElementById('btnTapStep');
+
+    if (!window.isSecureContext && location.protocol === 'http:') {
+      const banner = document.getElementById('httpsBanner');
+      const jumpLink = document.getElementById('httpsJumpLink');
+      banner.style.display = 'block';
+      jumpLink.href = `https://${location.hostname}:8443${location.pathname}${location.search}`;
+    }
+
+    const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    let ws = null;
+    try {
+      ws = new WebSocket(`${wsProto}//${location.host}`);
+      ws.onopen = () => {
+        connDotEl.className = 'dot ok';
+        connTextEl.textContent = '已連線電腦';
+      };
+      ws.onclose = () => {
+        connDotEl.className = 'dot';
+        connTextEl.textContent = 'WebSocket 已斷，將走 HTTP POST';
+      };
+    } catch {}
+
+    let stepPeaks = [];
+    let lastMag = 9.8;
+    let lastLinearMag = 0;
+    let latestTremor = 0.05;
+    let latestGyroYaw = 0;
+    let packetCount = 0;
+    let sensorActive = false;
+    let sensorListenerAttached = false;
+    let timerId = null;
+    let batchSamples = [];
+    let localRecording = false;
+    let localStartMs = 0;
+    let localImuLog = [];
+
+    const magHistory = [];
+    let lastPeakMs = 0;
+    let eventCount = 0;
+    let eventWindowStartMs = 0;
+    let eventRateHz = 0;
+    let lastDebugMs = 0;
+
+    function speakPhone(text) {
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'zh-CN';
+      u.rate = 0.95;
+      window.speechSynthesis.speak(u);
+    }
+
+    async function requestWakeLock() {
+      if ('wakeLock' in navigator) {
+        try {
+          await navigator.wakeLock.request('screen');
+          wakeStatusEl.textContent = '常亮鎖定';
+        } catch {}
+      }
+    }
+
+    function recordStepPeak(now) {
+      stepPeaks.push(now);
+      stepPeaks = stepPeaks.filter((t) => now - t <= 10000);
+    }
+
+    /**
+     * 雙軌高可靠步態波峰檢測器
+     * 軌 1：經典重力絕對閾值 (mag 跨過 10.55 m/s²)
+     * 軌 2：90 幀（≈1.5s）長窗口自適應基線躍升（+0.50 m/s²）— 防止短窗口自抵消
+     * 軌 3：純線性加速度（去重力後 > 1.10 m/s²）— 主要給 Android 用
+     * 前 12 個樣本不做判定，避免初值 9.8 誤觸發
+     */
+    function detectStep(mag, linearMag, now) {
+      if (magHistory.length < 12) {
+        magHistory.push(mag);
+        return 0;
+      }
+
+      const baseline = magHistory.reduce((a, b) => a + b, 0) / magHistory.length;
+      magHistory.push(mag);
+      if (magHistory.length > 90) magHistory.shift();
+
+      const adaptiveThresh = baseline + 0.50;
+      const crossedFixed = lastMag <= 10.55 && mag > 10.55;
+      const crossedAdaptive = lastMag <= adaptiveThresh && mag > adaptiveThresh;
+      const crossedLinear = lastLinearMag <= 1.10 && linearMag > 1.10;
+
+      if (crossedFixed || crossedAdaptive || crossedLinear) {
+        if (lastPeakMs === 0 || now - lastPeakMs > 300) {
+          lastPeakMs = now;
+          recordStepPeak(now);
+          return 1;
+        }
+      }
+      return 0;
+    }
+    btnTapStep.onclick = () => {
+      if (!timerId) {
+        btnStart.click();
+        return;
+      }
+      const now = performance.now();
+      recordStepPeak(now);
+      latestTremor = Number((0.10 + Math.random() * 0.06).toFixed(2));
+      latestGyroYaw = Number((15 + Math.random() * 10).toFixed(1));
+      const s = {
+        tMs: Math.round(now),
+        ax: 0, ay: 9.8, az: 4.8, mag: 10.91,
+        gx: 2, gy: latestGyroYaw, gz: 1, isPeak: 1
+      };
+      batchSamples.push(s);
+      if (localRecording) localImuLog.push({ relMs: Math.round(now - localStartMs), ...s });
+      giantMetrics.textContent = `步頻: ${stepPeaks.length * 6} 步/分 · 震顫: ${latestTremor.toFixed(2)}（手動）`;
+    };
+
+    btnStart.onclick = async () => {
+      if (timerId) {
+        btnTapStep.onclick();
+        return;
+      }
+
+      btnStart.classList.add('running');
+      giantIcon.textContent = '✅';
+      giantTitle.textContent = '正在實時同步步態';
+      giantSub.textContent = '正在請求傳感器權限…';
+
+      // 請求權限
+      let permState = 'non-ios';
+      if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+        try {
+          permState = await DeviceMotionEvent.requestPermission();
+        } catch (err) {
+          permState = 'error:' + err.message;
+        }
+      }
+
+      // 權限結果提示
+      if (permState === 'denied' || permState.startsWith('error')) {
+        debugEl.textContent =
+          '❌ 傳感器權限被拒：' + permState +
+          '。請完全關閉 Safari 重開 HTTPS 連結並點「允許」，或直接隨步伐點擊大按鈕手動計步。';
+        giantSub.textContent = '傳感器不可用，請隨步伐點擊此大按鈕計數';
+        speakPhone('傳感器不可用，請隨步伐點擊屏幕');
+      } else if (!window.isSecureContext) {
+        debugEl.textContent = '⚠ HTTP 非安全上下文：iOS 不彈權限框。請點擊上方紅色橫幅切換至 HTTPS 8443。';
+        giantSub.textContent = '當前 HTTP 頁面無法使用傳感器，請切換 HTTPS 或手動點擊';
+      } else {
+        giantSub.textContent = '請將手機放入口袋或握在胸前走動';
+      }
+
+      if (!sensorListenerAttached) {
+        sensorListenerAttached = true;
+        eventWindowStartMs = performance.now();
+
+        window.addEventListener('devicemotion', (e) => {
+          const acc = e.accelerationIncludingGravity || e.acceleration;
+          if (!acc || acc.x === null) {
+            debugEl.textContent = '⚠ devicemotion 觸發但數據為 null（可能權限被拒或非安全上下文）';
+            return;
+          }
+
+          sensorActive = true;
+          const ax = Number((acc.x || 0).toFixed(3));
+          const ay = Number((acc.y || 0).toFixed(3));
+          const az = Number((acc.z || 0).toFixed(3));
+          const mag = Number(Math.hypot(ax, ay, az).toFixed(3));
+
+          const lin = e.acceleration || { x: 0, y: 0, z: 0 };
+          const linearMag = Math.hypot(lin.x || 0, lin.y || 0, lin.z || 0);
+
+          const rot = e.rotationRate || {};
+          const gx = Number((rot.beta || 0).toFixed(2));
+          const gy = Number((rot.gamma || 0).toFixed(2));
+          const gz = Number((rot.alpha || 0).toFixed(2));
+          latestGyroYaw = Math.max(Math.abs(gy), Math.abs(gz));
+
+          const now = performance.now();
+          eventCount++;
+          if (now - eventWindowStartMs >= 1500) {
+            eventRateHz = (eventCount * 1000) / (now - eventWindowStartMs);
+            eventCount = 0;
+            eventWindowStartMs = now;
+          }
+
+          const isPeak = detectStep(mag, linearMag, now);
+          lastMag = mag;
+          lastLinearMag = linearMag;
+
+          const baseline = magHistory.length
+            ? magHistory.reduce((a, b) => a + b, 0) / magHistory.length
+            : 9.8;
+          latestTremor = Math.abs(mag - baseline);
+
+          if (now - lastDebugMs > 300) {
+            lastDebugMs = now;
+            debugEl.textContent =
+              `✔ 傳感器 ${eventRateHz.toFixed(0)}Hz | mag=${mag.toFixed(2)} | 基線=${baseline.toFixed(2)} | ` +
+              `10秒步數=${stepPeaks.length} | 步頻=${stepPeaks.length * 6}步/分`;
+          }
+
+          const sample = { tMs: Math.round(now), ax, ay, az, mag, gx, gy, gz, isPeak };
+          batchSamples.push(sample);
+          if (localRecording) localImuLog.push({ relMs: Math.round(now - localStartMs), ...sample });
+        });
+      }
+
+      try { await requestWakeLock(); } catch {}
+      speakPhone(permState === 'denied' ? '請隨步伐點擊螢幕按鈕' : '已啟動，請開始走動');
+
+      // 啟動發包定時器
+      timerId = setInterval(() => {
+        packetCount++;
+        const now = performance.now();
+        stepPeaks = stepPeaks.filter((t) => now - t <= 10000);
+
+        const currentBatch = batchSamples;
+        batchSamples = [];
+
+        const cadenceSpm = stepPeaks.length * 6;
+        const payloadStr = JSON.stringify({
+          seq: packetCount,
+          cadenceSpm,
+          tremorRms: Number(latestTremor.toFixed(2)),
+          gyroYawDegS: Number(latestGyroYaw.toFixed(1)),
+          sensorMode: sensorActive ? '手機 6 軸硬件傳感器' : '觸屏節拍模式',
+          samples: currentBatch,
+          ts: Date.now()
+        });
+
+        giantMetrics.textContent = `步頻: ${cadenceSpm} 步/分 · 震顫: ${latestTremor.toFixed(2)}`;
+
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(payloadStr);
+          logEl.innerHTML = `WS 已同步: #${packetCount} · ${sensorActive ? '硬件傳感器' : '觸屏節拍'}`;
+        } else if (!location.hostname.endsWith('github.io')) {
+          fetch('/api/imu-push', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: payloadStr
+          }).then(() => {
+            connDotEl.className = 'dot ok';
+            connTextEl.textContent = 'HTTP POST 已同步';
+            logEl.innerHTML = `HTTP 已同步: #${packetCount} · ${sensorActive ? '硬件傳感器' : '觸屏節拍'}`;
+          }).catch(() => {});
+        }
+      }, 250);
+    };
+
+    btnLocalRec.onclick = () => {
+      if (!localRecording) {
+        localRecording = true;
+        localStartMs = performance.now();
+        localImuLog = [];
+        btnLocalRec.textContent = '■ 停止本地錄製';
+        btnLocalExport.disabled = true;
+      } else {
+        localRecording = false;
+        btnLocalRec.textContent = '● 手機本地獨立錄製';
+        btnLocalExport.disabled = localImuLog.length === 0;
+      }
+    };
+
+    btnLocalExport.onclick = () => {
+      if (localImuLog.length === 0) return;
+      const headers = ['relMs', 'tMs', 'ax', 'ay', 'az', 'mag', 'gx', 'gy', 'gz', 'isPeak'];
+      const lines = [headers.join(','), ...localImuLog.map((r) => headers.map((k) => r[k]).join(','))];
+      const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `手機獨立錄製IMU_${Date.now()}.csv`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+    };
+  </script>
+</body>
+</html>
